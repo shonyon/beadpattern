@@ -4191,6 +4191,8 @@
         return;
       }
 
+      
+
       const activePalette = getActivePalette();
       const beadWidth = clamp(parseInt(beadWidthInput.value || 40), 8, 160);
       const beadHeight = clamp(parseInt(beadHeightInput.value || 40), 8, 160);
@@ -4208,14 +4210,8 @@
       const fullCounts = new Array(activePalette.length).fill(0);
       fullMatched.forEach(index => fullCounts[index]++);
 
-      const sortedPaletteIndices = fullCounts
-        .map((count, index) => ({ count, index }))
-        .filter(item => item.count > 0)
-        .sort((a, b) => b.count - a.count)
-        .slice(0, colorCount)
-        .map(item => item.index);
-
-      const selectedPalette = sortedPaletteIndices.map(index => activePalette[index]);
+const selectedPaletteIndices = selectPaletteIndices(activePalette, fullCounts, colorCount);
+const selectedPalette = selectedPaletteIndices.map(index => activePalette[index]);
 
       const indexedPixels = pixels.map(pixel => nearestColorIndex(pixel, selectedPalette));
       const counts = new Array(selectedPalette.length).fill(0);
@@ -4239,7 +4235,122 @@
         ` 当前使用 <strong>${selectedPalette.length}</strong> 种颜色，色卡总数 <strong>${activePalette.length}</strong> 色。`;
     }
 
+function selectPaletteIndices(palette, counts, colorCount) {
+  const used = counts
+    .map((count, index) => ({ count, index, color: palette[index] }))
+    .filter(item => item.count > 0)
+    .sort((a, b) => b.count - a.count);
 
+  if (used.length <= colorCount) {
+    return used.map(item => item.index);
+  }
+
+  const chosen = [];
+  const chosenSet = new Set();
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  const minBucketCount = Math.max(4, Math.round(total * 0.004));
+
+  function pushIndex(index) {
+    if (!chosenSet.has(index)) {
+      chosen.push(index);
+      chosenSet.add(index);
+    }
+  }
+
+  const blackCandidate = used.find(item => item.color.luma < 38 && item.color.saturation < 0.22);
+  if (blackCandidate) pushIndex(blackCandidate.index);
+
+  const whiteCandidate = used.find(item => item.color.luma > 235 && item.color.saturation < 0.10);
+  if (whiteCandidate) pushIndex(whiteCandidate.index);
+
+  const buckets = {};
+
+  used.forEach(item => {
+    const bucket = item.color.hueBucket;
+    if (!bucket) return;
+    if (!buckets[bucket]) buckets[bucket] = [];
+    buckets[bucket].push(item);
+  });
+
+  Object.keys(buckets).forEach(bucketName => {
+    const items = buckets[bucketName];
+    const bucketTotal = items.reduce((sum, item) => sum + item.count, 0);
+    if (bucketTotal < minBucketCount) return;
+
+    const representative =
+      items
+        .filter(item => item.color.saturation > 0.24)
+        .sort((a, b) => b.count - a.count)[0] || items[0];
+
+    if (representative) pushIndex(representative.index);
+  });
+
+  while (chosen.length > colorCount) {
+    chosen.sort((a, b) => counts[b] - counts[a]);
+    chosen.pop();
+    chosenSet.clear();
+    chosen.forEach(index => chosenSet.add(index));
+  }
+
+  const remaining = used.filter(item => !chosenSet.has(item.index));
+
+  while (chosen.length < colorCount && remaining.length) {
+    let best = remaining[0];
+    let bestScore = -Infinity;
+
+    remaining.forEach(item => {
+      const color = palette[item.index];
+      let minDistance = Infinity;
+
+      if (chosen.length) {
+        chosen.forEach(chosenIndex => {
+          const chosenColor = palette[chosenIndex];
+          const dL = color.lab.l - chosenColor.lab.l;
+          const dA = color.lab.a - chosenColor.lab.a;
+          const dB = color.lab.b - chosenColor.lab.b;
+          const hueGap = hueDistance(color.hue, chosenColor.hue);
+          const distance = Math.sqrt(dL * dL + dA * dA + dB * dB) + hueGap * 0.55;
+          if (distance < minDistance) minDistance = distance;
+        });
+      } else {
+        minDistance = 100;
+      }
+
+      const diversityBonus = Math.min(90, minDistance);
+      const vividBonus = color.saturation > 0.38 ? 18 : 0;
+      const score = item.count * 5 + diversityBonus + vividBonus;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = item;
+      }
+    });
+
+    pushIndex(best.index);
+
+    const removeIndex = remaining.findIndex(item => item.index === best.index);
+    if (removeIndex >= 0) remaining.splice(removeIndex, 1);
+  }
+
+  return chosen.sort((a, b) => counts[b] - counts[a]);
+}
+
+function hueBucketName(hue, saturation) {
+  if (saturation < 0.16) return null;
+
+  if (hue < 15 || hue >= 345) return "red";
+  if (hue < 40) return "orange";
+  if (hue < 68) return "yellow";
+  if (hue < 95) return "lime";
+  if (hue < 165) return "green";
+  if (hue < 195) return "cyan";
+  if (hue < 250) return "blue";
+  if (hue < 290) return "indigo";
+  if (hue < 330) return "purple";
+
+  return "magenta";
+}
+    
     function sampleCellsFromImage(image, beadWidth, beadHeight) {
       const sampleScale = 8;
       const workCanvas = document.createElement("canvas");
@@ -4488,7 +4599,7 @@
       const pixelChroma = Math.sqrt(pixelLab.a * pixelLab.a + pixelLab.b * pixelLab.b);
       const isVividPixel = pixelHsl.s > 0.35 && pixelChroma > 22;
       const isNeutralPixel = pixelHsl.s < 0.12 || pixelChroma < 7;
-
+      const pixelHueBucket = hueBucketName(pixelHsl.h, pixelHsl.s);
       palette.forEach((color, index) => {
         const dL = pixelLab.l - color.lab.l;
         const dA = pixelLab.a - color.lab.a;
@@ -4505,13 +4616,41 @@
           dLight * dLight * 0.45;
 
         if (isVividPixel) {
-          distance += dS * dS * 1.55;
-          if (color.saturation > 0.14) {
-            distance += dHue * dHue * 0.22;
-          } else {
-            distance += 2400;
-          }
+distance += dS * dS * 1.85;
 
+if (color.saturation > 0.14) {
+  distance += dHue * dHue * 0.72;
+
+  if (dHue > 18) {
+    distance += Math.pow(dHue - 18, 2) * 1.65;
+  }
+
+  if (pixelHueBucket && color.hueBucket && pixelHueBucket !== color.hueBucket && dHue > 20) {
+    distance += 1800 + Math.pow(dHue - 20, 2) * 0.75;
+  }
+} else {
+  distance += 3200;
+}
+if (
+  pixelHueBucket === "blue" &&
+  color.hueBucket &&
+  color.hueBucket !== "blue" &&
+  color.hueBucket !== "indigo" &&
+  dHue > 16
+) {
+  distance += 2600;
+}
+
+if (
+  pixelHueBucket === "green" &&
+  color.hueBucket &&
+  !["green", "lime", "cyan"].includes(color.hueBucket) &&
+  dHue > 18
+) {
+  distance += 1800;
+}
+        }
+        
           const darkenAmount = dLuma - 18;
           if (darkenAmount > 0) {
             distance += darkenAmount * darkenAmount * 1.65;
@@ -4550,18 +4689,20 @@
       return bestIndex;
     }
 
-    function prepareColor(color) {
-      const lab = rgbToLab(color.r, color.g, color.b);
-      const hsl = rgbToHsl(color.r, color.g, color.b);
-      return {
-        ...color,
-        lab,
-        hue: hsl.h,
-        saturation: hsl.s,
-        lightness: hsl.l,
-        luma: rgbLuma(color.r, color.g, color.b)
-      };
-    }
+  function prepareColor(color) {
+  const lab = rgbToLab(color.r, color.g, color.b);
+  const hsl = rgbToHsl(color.r, color.g, color.b);
+
+  return {
+    ...color,
+    lab,
+    hue: hsl.h,
+    saturation: hsl.s,
+    lightness: hsl.l,
+    luma: rgbLuma(color.r, color.g, color.b),
+    hueBucket: hueBucketName(hsl.h, hsl.s)
+  };
+}
 
     function rgbLuma(r, g, b) {
       return r * 0.299 + g * 0.587 + b * 0.114;
