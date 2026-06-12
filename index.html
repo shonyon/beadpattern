@@ -89,6 +89,7 @@
       background: #fff;
     }
 
+
     input[type="range"] {
       width: 100%;
       height: 24px;
@@ -100,7 +101,7 @@
 
     input[type="range"]::-webkit-slider-runnable-track {
       height: 10px;
-      background: linear-gradient(to right, #FFE2EA 0%, #FFE2EA var(--range-progress), #ffffff var(--range-progress), #ffffff 100%);
+      background: linear-gradient(to right, #FFF1A8 0%, #FFF1A8 var(--range-progress), #ffffff var(--range-progress), #ffffff 100%);
       border: 1px solid #b8b8b8;
       border-radius: 999px;
     }
@@ -110,7 +111,7 @@
       height: 18px;
       margin-top: -5px;
       border-radius: 50%;
-      background: #FFC7DB;
+      background: #FFE36E;
       border: 1px solid #8e8e8e;
       -webkit-appearance: none;
       appearance: none;
@@ -125,7 +126,7 @@
 
     input[type="range"]::-moz-range-progress {
       height: 10px;
-      background: #FFE2EA;
+      background: #FFF1A8;
       border-radius: 999px;
     }
 
@@ -133,7 +134,7 @@
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      background: #FFC7DB;
+      background: #FFE36E;
       border: 1px solid #8e8e8e;
     }
 
@@ -179,23 +180,23 @@
     .primary {
       background: #ffffff;
       color: #222222;
-      border-color: #FFE2EA;
+      border-color: #FFF1A8;
     }
 
     .primary:hover {
-      background: #fff7fa;
+      background: #FFFBE8;
       transform: translateY(-1px);
     }
 
     .secondary {
       background: #ffffff;
       color: #222222;
-      border-color: #FFE2EA;
+      border-color: #FFF1A8;
       margin-top: 10px;
     }
 
     .secondary:hover {
-      background: #fff7fa;
+      background: #FFFBE8;
     }
 
     .danger {
@@ -425,7 +426,7 @@
         <select id="mode">
           <option value="square">方格像素图</option>
           <option value="symbol">标准色号图</option>
-          <option value="circle">圆形拼豆 + 网格</option>
+          <option value="circle">圆形拼豆</option>
         </select>
 
         <label class="toggle">
@@ -1369,14 +1370,14 @@
   },
   {
     "code": "E17",
-    "hex": "#FFE2EA",
+    "hex": "#FFF1A8",
     "r": 255,
     "g": 226,
     "b": 234
   },
   {
     "code": "E18",
-    "hex": "#FFC7DB",
+    "hex": "#FFE36E",
     "r": 255,
     "g": 199,
     "b": 219
@@ -4060,6 +4061,19 @@
       ]
     };
 
+
+    function updateRangeProgress(input) {
+      const min = Number(input.min || 0);
+      const max = Number(input.max || 100);
+      const value = Number(input.value || 0);
+      const percent = max === min ? 0 : ((value - min) / (max - min)) * 100;
+      input.style.setProperty("--range-progress", `${percent}%`);
+    }
+
+    function updateAllRangeProgress() {
+      document.querySelectorAll('input[type="range"]').forEach(updateRangeProgress);
+    }
+
     const imageInput = document.getElementById("imageInput");
     const miniPreview = document.getElementById("miniPreview");
     const colorSystemInput = document.getElementById("colorSystem");
@@ -4649,6 +4663,7 @@ if (
 ) {
   distance += 1800;
 }
+        
           const darkenAmount = dLuma - 18;
           if (darkenAmount > 0) {
             distance += darkenAmount * darkenAmount * 1.65;
@@ -4920,6 +4935,7 @@ if (
       if (Number.isNaN(value)) return min;
       return Math.min(max, Math.max(min, value));
     }
+      updateAllRangeProgress();
   </script>
 </body>
 </html>
